@@ -8,6 +8,7 @@ use tracing as log;
 
 pub(crate) static CONFIG_FILE_NAME: &str = "triagebot.toml";
 const REFRESH_EVERY: Duration = Duration::from_secs(2 * 60); // Every two minutes
+// const REFRESH_EVERY: Duration = Duration::from_secs(10);
 
 static CONFIG_CACHE: LazyLock<
     RwLock<HashMap<String, (Result<Arc<Config>, ConfigurationError>, Instant)>>,

@@ -327,9 +327,12 @@ async fn schedule_acceptance_job(
 ) -> anyhow::Result<()> {
     if config.auto_closing {
         let seconded_at = Utc::now();
-        let accept_at = if issue.repository().full_repo_name() == "rust-lang/triagebot" {
+        let accept_at = if matches!(
+            issue.repository().full_repo_name().as_str(),
+            "rust-lang/triagebot" | "fmease-extra/triagebot-test-env-0"
+        ) {
             // Hack for the triagebot repo, so we can test more quickly
-            seconded_at + Duration::minutes(5)
+            seconded_at + Duration::minutes(1)
         } else {
             seconded_at + Duration::days(config.waiting_period.into())
         };
@@ -682,7 +685,76 @@ async fn process_seconded(
     }
 
     if !issue.labels.iter().any(|l| l.name == config.accept_label) {
+        // FIXME: Update comment.
         // Only post the comment if the accept_label isn't set yet, we may be in a retry
+
+        // FIXME: Temporary
+        let tracking_issue = 'auto_tracking: {
+            if issue
+                .labels
+                .iter()
+                .any(|l| l.name == "suppress-auto-tracking")
+            {
+                break 'auto_tracking String::new();
+            }
+
+            let repo = crate::github::IssueRepository {
+                organization: "fmease-extra".into(),
+                repository: "triagebot-test-env-1".into(),
+            };
+            let title = format!("Tracking issue for MCP {}: {}", issue.number, issue.title);
+            let body = format!(
+                "\
+This is a tracking issue for [MCP {number}](https://github.com/fmease-extra/triagebot-test-env-0/issues/{number}).
+
+### About tracking issues
+
+Tracking issues are used to record the overall progress of implementation.
+They are also used as hubs connecting to other relevant issues, e.g., bugs or open design questions.
+A tracking issue is however *not* meant for large scale discussion, questions, or bug reports about a feature.
+Instead, open a dedicated issue for the specific matter and add the relevant feature gate label.
+Discussion comments will get marked as off-topic or deleted.
+Repeated discussions on the tracking issue may lead to the tracking issue getting locked.
+
+### Steps
+
+- [ ] Implement the MCP
+- [ ] Adjust documentation
+
+### Unresolved questions
+
+*None so far.*
+
+### Implementation history
+
+*Empty so far.*\
+",
+               number = issue.number
+           );
+
+            let tracking_issue = ctx
+                .github
+                .new_issue(
+                    &repo,
+                    &title,
+                    &body,
+                    vec![
+                        "C-tracking-issue".into(),
+                        "T-compiler".into(),
+                        "B-MCP-approved".into(),
+                        "S-tracking-unimplemented".into(),
+                    ],
+                )
+                .await
+                .context("unable to create issue")?;
+
+            format!(
+                "https://github.com/{}/{}/issues/{}",
+                repo.organization, repo.repository, tracking_issue.number
+            )
+        };
+
+        // FIXME: Temporary
         issue
             .post_comment(
                 &ctx.github,
@@ -690,6 +762,8 @@ async fn process_seconded(
 r#"The final comment period is now complete, this major change is now **accepted**.
 
 As the automated representative, I would like to thank the author for their work and everyone else who contributed to this major change proposal.
+
+[TRACKING ISSUE]({tracking_issue}).
 
 *If you think this major change shouldn't have been accepted, feel free to remove the `{}` label and reopen this issue.*"#,
                     &config.accept_label,
